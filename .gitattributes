@@ -1,0 +1,5 @@
+# На приставке всё читает POSIX-shell и Python: CRLF ломает и mux_launch.sh,
+# и разбор ini. Держим LF независимо от того, на какой машине правят.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
