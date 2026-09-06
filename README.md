@@ -91,9 +91,12 @@ unix-сокета.
 
 Работают без приставки и без сети:
 
+    python tests/run_all.py         все разом
+
     python tests/test_voices.py     сезоны, серии, озвучки
     python tests/test_resolve.py    разбор мастер-плейлиста и Collaps
     python tests/test_marks.py      правила просмотра и отметки
+    python tests/test_account.py    ключи записей и разбор синхронизации
     python tests/test_layout.py     раскладка на всей линейке экранов
 
 ## Сборка релиза
