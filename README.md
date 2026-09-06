@@ -97,6 +97,7 @@ unix-сокета.
     python tests/test_resolve.py    разбор мастер-плейлиста и Collaps
     python tests/test_marks.py      правила просмотра и отметки
     python tests/test_account.py    ключи записей и разбор синхронизации
+    python tests/test_update.py     версии, манифест, годность архива, поиск
     python tests/test_layout.py     раскладка на всей линейке экранов
 
 ## Сборка релиза
