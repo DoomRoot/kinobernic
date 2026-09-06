@@ -1,5 +1,13 @@
-# На приставке всё читает POSIX-shell и Python: CRLF ломает и mux_launch.sh,
-# и разбор ini. Держим LF независимо от того, на какой машине правят.
-* text=auto eol=lf
+# Скрипты приставки должны остаться с переводами строк Unix: sh и PARSE_INI
+# на \r спотыкаются, и приложение молча не запускается.
+*.sh text eol=lf
+
+# А эти два - наоборот, для Windows.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Двоичное не трогать.
+*.ttf binary
 *.png binary
-*.jpg binary
+*.pyz binary
+*.muxapp binary
