@@ -25,5 +25,6 @@ dist/
 stand/libs/
 stand/fonts/
 stand/data/
+stand/data_*/
 stand/run/
 tests/data/
