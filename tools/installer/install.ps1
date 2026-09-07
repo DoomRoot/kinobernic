@@ -199,6 +199,25 @@ function Remove-Card($card, $withData) {
 
 # ----------------------------------------------------------------- ssh ----
 
+# Ключи приставок не запоминаем вовсе. `StrictHostKeyChecking=no` сам по себе
+# спасает только от первого знакомства: он молча добавляет НОВЫЙ ключ, а если
+# для этого адреса ключ уже записан и не совпал - ssh встаёт намертво
+# («REMOTE HOST IDENTIFICATION HAS CHANGED») и заодно отключает вход по
+# паролю. На домашней сети это происходит само собой: адреса раздаёт DHCP, и
+# сегодняшний 192.168.2.40 - вчерашняя другая приставка. Ровно так и вышло:
+# в known_hosts на .40 лежали ключи прежнего жильца, и удаление по сети
+# отвалилось с кодом 255.
+#
+# NUL - это пустое устройство Windows: ключ некуда записать и не с чем
+# сравнивать. Терять тут нечего, приставка стоит в домашней сети и пароль у
+# неё «root»; зато файл ключей пользователя мы не трогаем ни на чтение, ни
+# на запись.
+$SSHOPT = @(
+    "-o", "UserKnownHostsFile=NUL",
+    "-o", "GlobalKnownHostsFile=NUL",
+    "-o", "StrictHostKeyChecking=no"
+)
+
 function Ask-Address {
     Say ""
     Say "Приставка должна быть в той же сети, и на ней должен быть включён SSH."
@@ -212,7 +231,7 @@ function Ask-Address {
 }
 
 function Run-Ssh($ip, $script) {
-    & ssh.exe -o StrictHostKeyChecking=no -o ConnectTimeout=8 ("root@" + $ip) $script
+    & ssh.exe @SSHOPT -o ConnectTimeout=8 ("root@" + $ip) $script
     if ($LASTEXITCODE -ne 0) { throw ("приставка не ответила или отказала, код " + $LASTEXITCODE) }
 }
 
@@ -271,7 +290,7 @@ function Install-Ssh($zip) {
     if (-not $ip) { return }
     Head ("Ставлю по сети на " + $ip)
     Say "Пароль спросит сама приставка: на обеих прошивках это root."
-    & scp.exe -o StrictHostKeyChecking=no $zip ("root@" + $ip + ":/tmp/kinobernic-install.zip")
+    & scp.exe @SSHOPT $zip ("root@" + $ip + ":/tmp/kinobernic-install.zip")
     if ($LASTEXITCODE -ne 0) { throw "не удалось скопировать пакет на приставку" }
     Run-Ssh $ip $INSTALL_SH
     Say ""
