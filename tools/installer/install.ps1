@@ -212,10 +212,21 @@ function Remove-Card($card, $withData) {
 # сравнивать. Терять тут нечего, приставка стоит в домашней сети и пароль у
 # неё «root»; зато файл ключей пользователя мы не трогаем ни на чтение, ни
 # на запись.
+#
+# LogLevel=ERROR убирает «Warning: Permanently added ... to the list of known
+# hosts» - предупреждение бессмысленное (мы пишем ключ в пустоту), а выглядит
+# оно тревожно. Настоящие отказы при этом видны: «Permission denied» так и
+# печатается.
+#
+# NumberOfPasswordPrompts=1: пароль мы подаём сами, и если он не тот, три
+# попытки подряд с тем же самым паролем - лишняя минута ожидания и три
+# одинаковые строки на экране.
 $SSHOPT = @(
     "-o", "UserKnownHostsFile=NUL",
     "-o", "GlobalKnownHostsFile=NUL",
-    "-o", "StrictHostKeyChecking=no"
+    "-o", "StrictHostKeyChecking=no",
+    "-o", "LogLevel=ERROR",
+    "-o", "NumberOfPasswordPrompts=1"
 )
 
 function Ask-Address {
@@ -255,6 +266,44 @@ function Ask-Address {
     return $null
 }
 
+# Пароль приставки нужен дважды: сначала scp кладёт пакет, потом ssh его
+# разворачивает. Раньше приставка спрашивала его отдельно на каждую связь -
+# человек вводил одно и то же два раза подряд и справедливо недоумевал.
+#
+# Общего соединения на двоих тут не сделать: ControlMaster в windows-сборке
+# OpenSSH не поддержан. Поэтому спрашиваем один раз и подаём сами через
+# SSH_ASKPASS. Помощник читает пароль из переменной окружения, а не хранит
+# его в себе: на диск пароль не попадает, живёт только в памяти процесса и
+# стирается в Stop-Password.
+$ASKHELPER = $null
+
+function Start-Password {
+    Say ""
+    Say "Пароль приставки - на обеих прошивках root. Просто Enter, если он такой."
+    $secure = Read-Host "Пароль" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    if (-not $plain) { $plain = "root" }
+
+    $name = "kinobernic-ask-" + [guid]::NewGuid().ToString("N").Substring(0, 8) + ".cmd"
+    $script:ASKHELPER = Join-Path $env:TEMP $name
+    Set-Content -Path $script:ASKHELPER -Value "@echo %KINOBERNIC_PASS%" -Encoding ascii
+    $env:KINOBERNIC_PASS = $plain
+    $env:SSH_ASKPASS = $script:ASKHELPER
+    $env:SSH_ASKPASS_REQUIRE = "force"
+}
+
+function Stop-Password {
+    $env:KINOBERNIC_PASS = $null
+    $env:SSH_ASKPASS = $null
+    $env:SSH_ASKPASS_REQUIRE = $null
+    if ($script:ASKHELPER -and (Test-Path $script:ASKHELPER)) {
+        Remove-Item $script:ASKHELPER -Force -ErrorAction SilentlyContinue
+    }
+    $script:ASKHELPER = $null
+}
+
 function Run-Ssh($ip, $script) {
     # Здесь-строки PowerShell наследуют переводы строк файла, а файл этот -
     # CRLF (иначе Windows его портит). На приставке /bin/sh - busybox, и
@@ -277,7 +326,10 @@ function Run-Ssh($ip, $script) {
     $bytes = [Text.Encoding]::UTF8.GetBytes($script)
     $packed = [Convert]::ToBase64String($bytes)
     & ssh.exe @SSHOPT -o ConnectTimeout=8 ("root@" + $ip) ("echo " + $packed + " | base64 -d | sh")
-    if ($LASTEXITCODE -ne 0) { throw ("приставка не ответила или отказала, код " + $LASTEXITCODE) }
+    if ($LASTEXITCODE -ne 0) {
+        throw ("приставка не ответила или отказала, код " + $LASTEXITCODE +
+               ". Если выше писало Permission denied - не тот пароль.")
+    }
 }
 
 $INSTALL_SH = @'
@@ -333,11 +385,18 @@ done
 function Install-Ssh($zip) {
     $ip = Ask-Address
     if (-not $ip) { return }
-    Head ("Ставлю по сети на " + $ip)
-    Say "Пароль спросит сама приставка: на обеих прошивках это root."
-    & scp.exe @SSHOPT $zip ("root@" + $ip + ":/tmp/kinobernic-install.zip")
-    if ($LASTEXITCODE -ne 0) { throw "не удалось скопировать пакет на приставку" }
-    Run-Ssh $ip $INSTALL_SH
+    Start-Password
+    try {
+        Head ("Ставлю по сети на " + $ip)
+        & scp.exe @SSHOPT $zip ("root@" + $ip + ":/tmp/kinobernic-install.zip")
+        if ($LASTEXITCODE -ne 0) {
+            throw ("не удалось скопировать пакет на приставку, код " + $LASTEXITCODE +
+                   ". Если писало Permission denied - не тот пароль.")
+        }
+        Run-Ssh $ip $INSTALL_SH
+    } finally {
+        Stop-Password
+    }
     Say ""
     Say "Готово. Приложение появится в списке, когда приставка вернётся в меню." Green
 }
@@ -345,9 +404,14 @@ function Install-Ssh($zip) {
 function Remove-Ssh($withData) {
     $ip = Ask-Address
     if (-not $ip) { return }
-    Head ("Удаляю по сети с " + $ip)
-    if ($withData) { $keep = "0" } else { $keep = "1" }
-    Run-Ssh $ip $REMOVE_SH.Replace("__KEEP__", $keep)
+    Start-Password
+    try {
+        Head ("Удаляю по сети с " + $ip)
+        if ($withData) { $keep = "0" } else { $keep = "1" }
+        Run-Ssh $ip $REMOVE_SH.Replace("__KEEP__", $keep)
+    } finally {
+        Stop-Password
+    }
     Say "Готово." Green
 }
 
