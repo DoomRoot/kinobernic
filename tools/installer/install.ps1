@@ -256,6 +256,13 @@ function Ask-Address {
 }
 
 function Run-Ssh($ip, $script) {
+    # Здесь-строки PowerShell наследуют переводы строк файла, а файл этот -
+    # CRLF (иначе Windows его портит). На приставке /bin/sh - busybox, и
+    # возврат каретки он считает частью команды: первая же строка «set -e»
+    # приезжает как «set -e<CR>», и всё останавливается на
+    # «sh: set: line 0: illegal option -». Именно поэтому установка и
+    # удаление по сети не работали ни разу.
+    $script = $script -replace "`r`n", "`n"
     & ssh.exe @SSHOPT -o ConnectTimeout=8 ("root@" + $ip) $script
     if ($LASTEXITCODE -ne 0) { throw ("приставка не ответила или отказала, код " + $LASTEXITCODE) }
 }
