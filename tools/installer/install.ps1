@@ -263,7 +263,20 @@ function Run-Ssh($ip, $script) {
     # «sh: set: line 0: illegal option -». Именно поэтому установка и
     # удаление по сети не работали ни разу.
     $script = $script -replace "`r`n", "`n"
-    & ssh.exe @SSHOPT -o ConnectTimeout=8 ("root@" + $ip) $script
+
+    # Скрипт отдаём в base64, а не аргументом. PowerShell 5.1 передаёт
+    # родным программам аргумент с кавычками как попало: кавычки теряются, и
+    # до приставки доезжает уже испорченный текст. На экране это выглядело
+    # как «sh: syntax error: unexpected "(" (expecting "fi")» - скобка из
+    # echo "удалено с muOS ($M)" осталась без кавычек вокруг.
+    #
+    # Проверено рядом на приставке: тот же скрипт аргументом даёт эту ошибку,
+    # через base64 отрабатывает. В base64 нет ни кавычек, ни скобок, ни
+    # пробелов - портить нечего. `base64 -d` есть и в busybox на muOS, и в
+    # coreutils на стоке.
+    $bytes = [Text.Encoding]::UTF8.GetBytes($script)
+    $packed = [Convert]::ToBase64String($bytes)
+    & ssh.exe @SSHOPT -o ConnectTimeout=8 ("root@" + $ip) ("echo " + $packed + " | base64 -d | sh")
     if ($LASTEXITCODE -ne 0) { throw ("приставка не ответила или отказала, код " + $LASTEXITCODE) }
 }
 
