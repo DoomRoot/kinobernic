@@ -37,3 +37,8 @@ app/
 знания/
 tests/
 stand/
+assets/
+stock/
+tools/build_release.py
+tools/kctl.py
+tools/make_glyph.py
